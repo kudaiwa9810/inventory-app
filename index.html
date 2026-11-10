@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>部品在庫管理システム</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="description" content="製品と部品の在庫を管理するためのWebアプリケーション">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="在庫管理">
+
+    <!-- Manifest -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- SheetJS Library for Excel Import/Export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- ヘッダー -->
+        <header class="app-header">
+            <h1 class="app-title">🏭 部品在庫管理システム</h1>
+            <p class="app-subtitle">製造業向け 在庫管理ソリューション</p>
+        </header>
+
+        <!-- ナビゲーション -->
+        <nav class="nav-tabs">
+            <button class="nav-tab active" data-screen="dashboard">📊 ダッシュボード</button>
+            <button class="nav-tab" data-screen="products">📦 製品管理</button>
+            <button class="nav-tab" data-screen="parts">🔧 部品管理</button>
+            <button class="nav-tab" data-screen="inventory">📈 在庫管理</button>
+            <button class="nav-tab" data-screen="history">📋 履歴</button>
+            <button class="nav-tab" data-screen="order">📦 発注管理</button>
+            <button class="nav-tab" data-screen="shipment">🚚 製品出荷記録</button>
+            <button class="nav-tab" data-screen="suppliers">🏢 仕入先管理</button>
+
+            <!-- 検索ボックス -->
+            <div class="search-container">
+                <input type="text" id="global-search" class="search-input" placeholder="検索..." autocomplete="off">
+                <button id="search-btn" class="search-btn">🔍</button>
+                <div id="search-autocomplete" class="search-autocomplete"></div>
+            </div>
+        </nav>
+
+        <!-- メインコンテンツ -->
+        <main class="main-content">
+            <!-- ダッシュボード -->
+            <div id="dashboard-screen" class="screen active">
+                <div class="loading"></div>
+            </div>
+
+            <!-- 製品管理 -->
+            <div id="products-screen" class="screen"></div>
+
+            <!-- 部品管理 -->
+            <div id="parts-screen" class="screen"></div>
+
+            <!-- 在庫管理 -->
+            <div id="inventory-screen" class="screen"></div>
+
+
+            <!-- 履歴 -->
+            <div id="history-screen" class="screen"></div>
+
+
+            <!-- 発注管理 -->
+            <div id="order-screen" class="screen"></div>
+
+            <!-- 製品出荷予定 -->
+            <div id="shipment-screen" class="screen"></div>
+
+            <!-- 仕入先管理 -->
+            <div id="suppliers-screen" class="screen"></div>
+        </main>
+    </div>
+
+    <!-- 製品追加モーダル -->
+    <div id="product-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">製品追加</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">製品番号</label>
+                <input type="text" id="product-code" class="form-input" placeholder="例: PROD-001, 12345678, etc" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">製品名</label>
+                <input type="text" id="product-name" class="form-input" placeholder="製品Aなど" />
+            </div>
+            <button id="save-product-btn" class="btn btn-primary">保存</button>
+        </div>
+    </div>
+
+    <!-- 部品追加モーダル -->
+    <div id="part-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">部品追加</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">部品番号</label>
+                <input type="text" id="part-code" class="form-input" placeholder="例: 1234-56A, PART-001, etc" />
+
+            </div>
+            <div class="form-group">
+                <label class="form-label">製品番号</label>
+                <input type="text" id="part-product-code" class="form-input" placeholder="12345678" maxlength="8" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">部品名</label>
+                <input type="text" id="part-name" class="form-input" placeholder="材料X、加工品Yなど" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">単体費用（円）</label>
+                <input type="number" id="part-cost" class="form-input" min="0" value="0" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">構成数（製品1つに必要な数）</label>
+                <input type="number" id="part-quantity" class="form-input" min="1" value="1" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">仕入先コード</label>
+                <input type="text" id="part-supplier-code" class="form-input" placeholder="例: SUP-001" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">仕入先</label>
+                <input type="text" id="part-supplier" class="form-input" placeholder="株式会社〇〇など" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">安全在庫数</label>
+                <input type="number" id="part-safety-stock" class="form-input" min="0" value="0" />
+                <div class="form-hint">この数量を下回ると発注推奨に表示されます</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">発注方法</label>
+                <select id="part-order-method" class="form-input">
+                    <option value="">未設定</option>
+                    <option value="メール外注">メール外注</option>
+                    <option value="通販">通販</option>
+                    <option value="電話・FAX">電話・FAX</option>
+                    <option value="その他">その他</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">発注リンク / URL</label>
+                <input type="text" id="part-order-link" class="form-input" placeholder="https://... またはネットワークパス（\\server\share\...）" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">発注テンプレート（メモ雛形）</label>
+                <textarea id="part-order-template" class="form-textarea" rows="4" placeholder="メール文面の雛形や、発注時のメモとして引用される内容"></textarea>
+            </div>
+
+            <!-- 材料情報セクション -->
+            <hr style="margin: var(--spacing-md) 0; border: none; border-top: 1px solid var(--border);" />
+            <h3 style="font-size: 0.95rem; font-weight: 600; color: var(--text-muted); margin-bottom: var(--spacing-sm);">
+                🪨 材料情報（発注書用）
+            </h3>
+            <div class="form-group">
+                <label class="form-label">形状</label>
+                <select id="part-material-shape" class="form-input">
+                    <option value="">-- 選択してください --</option>
+                    <option value="丸棒">丸棒</option>
+                    <option value="六角材">六角材</option>
+                    <option value="四角材">四角材</option>
+                    <option value="帯板">帯板</option>
+                    <option value="板材">板材</option>
+                    <option value="その他">その他</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">寸法</label>
+                <input type="text" id="part-material-dimension" class="form-input"
+                    placeholder="例: φ50、AF17、□25、t1.0×W30" />
+                <small style="color: var(--text-muted);">丸棒はφ径、六角・四角は平径、帯板は厚×幅</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">材料規格</label>
+                <input type="text" id="part-material-spec" class="form-input"
+                    placeholder="例: SS400、SUS304、A5052" />
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-sm);">
+                <div class="form-group">
+                    <label class="form-label">発注単位</label>
+                    <input type="text" id="part-material-unit" class="form-input"
+                        placeholder="本、枚、kg、m" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">1単位あたりの取れ数</label>
+                    <input type="number" id="part-material-yield" class="form-input"
+                        min="0" value="0" placeholder="0=未設定" />
+                    <small style="color: var(--text-muted);">未設定の場合は発注数を手入力</small>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">材料メモ</label>
+                <input type="text" id="part-material-memo" class="form-input"
+                    placeholder="例: 定尺3m、切り代5mm込み" />
+            </div>
+            <button id="save-part-btn" class="btn btn-primary">保存</button>
+        </div>
+    </div>
+
+    <!-- 部品編集モーダル -->
+    <div id="edit-part-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">部品を編集</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <input type="hidden" id="edit-part-id" />
+            <div class="form-group">
+                <label class="form-label">部品番号</label>
+                <input type="text" id="edit-part-code" class="form-input" disabled />
+            </div>
+            <div class="form-group">
+                <label class="form-label">製品番号</label>
+                <input type="text" id="edit-part-product-code" class="form-input" disabled />
+            </div>
+            <div class="form-group">
+                <label class="form-label">部品名</label>
+                <input type="text" id="edit-part-name" class="form-input" placeholder="材料X、加工品Yなど" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">単体費用（円）</label>
+                <input type="number" id="edit-part-cost" class="form-input" min="0" value="0" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">構成数（製品1つに必要な数）</label>
+                <input type="number" id="edit-part-quantity" class="form-input" min="1" value="1" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">仕入先コード</label>
+                <input type="text" id="edit-part-supplier-code" class="form-input" placeholder="例: SUP-001" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">仕入先</label>
+                <input type="text" id="edit-part-supplier" class="form-input" placeholder="株式会社〇〇など" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">発注方法</label>
+                <select id="edit-part-order-method" class="form-input">
+                    <option value="">未設定</option>
+                    <option value="メール外注">メール外注</option>
+                    <option value="通販">通販</option>
+                    <option value="電話・FAX">電話・FAX</option>
+                    <option value="その他">その他</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">発注リンク / URL</label>
+                <input type="text" id="edit-part-order-link" class="form-input" placeholder="https://... またはネットワークパス（\\server\share\...）" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">発注テンプレート（メモ雛形）</label>
+                <textarea id="edit-part-order-template" class="form-textarea" rows="5" placeholder="メール文面の雛形や、発注時のメモとして引用される内容"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">安全在庫数</label>
+                <input type="number" id="edit-part-safety-stock" class="form-input" min="0" value="0" />
+                <small style="color: var(--text-muted);">推奨発注数 = 不足数 + 安全在庫数</small>
+            </div>
+
+            <!-- 材料情報セクション -->
+            <hr style="margin: var(--spacing-md) 0; border: none; border-top: 1px solid var(--border);" />
+            <h3 style="font-size: 0.95rem; font-weight: 600; color: var(--text-muted); margin-bottom: var(--spacing-sm);">
+                🪨 材料情報（発注書用）
+            </h3>
+            <div class="form-group">
+                <label class="form-label">形状</label>
+                <select id="edit-part-material-shape" class="form-input">
+                    <option value="">-- 選択してください --</option>
+                    <option value="丸棒">丸棒</option>
+                    <option value="六角材">六角材</option>
+                    <option value="四角材">四角材</option>
+                    <option value="帯板">帯板</option>
+                    <option value="板材">板材</option>
+                    <option value="その他">その他</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">寸法</label>
+                <input type="text" id="edit-part-material-dimension" class="form-input"
+                    placeholder="例: φ50、AF17、□25、t1.0×W30" />
+                <small style="color: var(--text-muted);">丸棒はφ径、六角・四角は平径、帯板は厚×幅</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">材料規格</label>
+                <input type="text" id="edit-part-material-spec" class="form-input"
+                    placeholder="例: SS400、SUS304、A5052" />
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-sm);">
+                <div class="form-group">
+                    <label class="form-label">発注単位</label>
+                    <input type="text" id="edit-part-material-unit" class="form-input"
+                        placeholder="本、枚、kg、m" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">1単位あたりの取れ数</label>
+                    <input type="number" id="edit-part-material-yield" class="form-input"
+                        min="0" value="0" placeholder="0=未設定" />
+                    <small style="color: var(--text-muted);">未設定の場合は発注数を手入力</small>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">材料メモ</label>
+                <input type="text" id="edit-part-material-memo" class="form-input"
+                    placeholder="例: 定尺3m、切り代5mm込み" />
+            </div>
+
+            <div class="alert alert-info" style="margin-top: 1rem;">
+                ℹ️ 同じ部品番号の部品は、構成数以外の項目が連動して更新されます。
+            </div>
+            <button id="update-part-btn" class="btn btn-primary">更新</button>
+        </div>
+    </div>
+
+    <!-- 在庫直接編集モーダル -->
+    <div id="edit-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">在庫直接編集</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="alert alert-warning">
+                ⚠️ 在庫を直接編集。
+            </div>
+            <div class="form-group">
+                <label class="form-label">部品番号</label>
+                <input type="text" id="direct-edit-part-code" class="form-input" disabled />
+            </div>
+            <div class="form-group">
+                <label class="form-label">現在庫</label>
+                <input type="number" id="edit-current-stock" class="form-input" disabled />
+            </div>
+            <div class="form-group">
+                <label class="form-label">新在庫数</label>
+                <input type="number" id="edit-new-stock" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">変更理由（必須）</label>
+                <textarea id="edit-reason" class="form-textarea" placeholder="例：不良品10個を廃棄"></textarea>
+            </div>
+            <button id="save-edit-btn" class="btn btn-danger">在庫を更新</button>
+        </div>
+    </div>
+
+    <!-- 発注記録モーダル -->
+    <div id="order-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">📦 発注記録</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <!-- 部品情報（自動表示） -->
+            <div id="order-part-info" style="background: var(--surface, #f8f9fa); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.9rem; color: #333;"></div>
+            <!-- リンクエリア（URLはクリッカブル、パスはコピーボタン） -->
+            <div id="order-link-area" style="margin-bottom: 12px;"></div>
+            <input type="hidden" id="order-part-id" />
+            <div class="form-group">
+                <label class="form-label">発注数（必須）</label>
+                <input type="number" id="order-quantity" class="form-input" min="1" placeholder="例: 100" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">発注日（必須）</label>
+                <input type="date" id="order-date" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">希望納期</label>
+                <input type="date" id="order-expected-delivery" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">メモ</label>
+                <textarea id="order-memo" class="form-textarea" rows="6" placeholder="発注に関するメモ（テンプレートがある場合は自動入力されます）"></textarea>
+            </div>
+            <button id="save-order-btn" class="btn btn-primary">発注記録を保存</button>
+        </div>
+    </div>
+
+    <!-- 製品出荷予定 追加/編集モーダル -->
+    <div id="shipment-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="shipment-modal-title" class="modal-title">出荷予定を追加</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">発注番号</label>
+                <input type="text" id="shipment-order-no" class="form-input" placeholder="例: 7489926-001" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">製品番号（必須）</label>
+                <input type="text" id="shipment-product-code" class="form-input" placeholder="例: PROD-001" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">製品名（必須）</label>
+                <div style="position: relative;">
+                    <input type="text" id="shipment-product-name" class="form-input" placeholder="例: 製品A"
+                        autocomplete="off" />
+                    <div id="shipment-product-suggestions" class="autocomplete-dropdown" style="display: none;"></div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">残数（必須）</label>
+                <input type="number" id="shipment-quantity" class="form-input" min="1" step="1" placeholder="例: 100" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">希望納期（必須）</label>
+                <input type="date" id="shipment-date" class="form-input" />
+            </div>
+            <button id="save-shipment-btn" class="btn btn-primary">保存</button>
+        </div>
+    </div>
+
+    <!-- 仕入先追加/編集モーダル -->
+    <div id="supplier-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="supplier-modal-title" class="modal-title">仕入先を追加</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">仕入先コード（必須）</label>
+                <input type="text" id="supplier-code" class="form-input" placeholder="例: SUP-001" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">仕入先名（必須）</label>
+                <input type="text" id="supplier-name" class="form-input" placeholder="株式会社〇〇" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">メールアドレス</label>
+                <input type="email" id="supplier-email" class="form-input" placeholder="order@example.com" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">電話番号</label>
+                <input type="text" id="supplier-phone" class="form-input" placeholder="06-1234-5678" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">FAX番号</label>
+                <input type="text" id="supplier-fax" class="form-input" placeholder="06-1234-5679" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">標準発注方法</label>
+                <select id="supplier-order-method" class="form-input">
+                    <option value="">未設定</option>
+                    <option value="メール外注">メール外注</option>
+                    <option value="通販">通販</option>
+                    <option value="電話・FAX">電話・FAX</option>
+                    <option value="その他">その他</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">メール件名テンプレート</label>
+                <input type="text" id="supplier-email-subject" class="form-input"
+                    placeholder="例: 【発注依頼】{部品名} {発注数}個" />
+                <small style="color: var(--text-muted);">変数: {部品名} {発注数} {仕入先名} {発注日}</small>
+            </div>
+            <div class="form-group">
+                <label class="form-label">備考</label>
+                <textarea id="supplier-notes" class="form-textarea" rows="3" placeholder="担当者名など"></textarea>
+            </div>
+            <button id="save-supplier-btn" class="btn btn-primary">保存</button>
+        </div>
+    </div>
+
+    <!-- JavaScriptファイル読み込み -->
+    <script src="js/config.js"></script>
+    <script src="js/vendor/msal-browser.min.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/sharepoint-transport.js"></script>
+    <script src="js/models.js"></script>
+    <script src="js/inventory-logic.js"></script>
+    <script src="js/cost-calculator.js"></script>
+    <script src="js/excel-manager.js"></script>
+    <script src="js/search-manager.js"></script>
+    <script src="js/order-manager.js"></script>
+    <script src="js/ui-manager.js"></script>
+    <script src="js/app.js"></script>
+
+    <!-- Service Worker登録 -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker registered successfully:', registration);
+                    })
+                    .catch(error => {
+                        console.log('Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+</body>
+
+</html>

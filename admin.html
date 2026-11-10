@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>在庫管理 管理ページ</title>
+<style>
+  body { font-family: "Yu Gothic UI", "Meiryo", sans-serif; background:#1a1a2e; color:#e5e7eb; margin:0; padding:24px; }
+  .card { max-width:760px; margin:0 auto 16px; background:#24243e; border-radius:12px; padding:20px 24px; }
+  h1 { font-size:1.3rem; margin:0 auto 16px; max-width:760px; }
+  h2 { font-size:1.05rem; margin-top:0; }
+  button, .btn { background:#667eea; color:#fff; border:none; padding:10px 18px; border-radius:8px; font-size:.95rem; cursor:pointer; text-decoration:none; display:inline-block; }
+  .danger { background:#dc2626; }
+  table { border-collapse:collapse; width:100%; }
+  td, th { border-bottom:1px solid #3a3a5e; padding:6px 8px; text-align:left; }
+  td.n { text-align:right; }
+  .msg { margin-top:12px; padding:12px; border-radius:8px; background:#2f2f50; white-space:pre-wrap; }
+  .err { background:#5b1f2a; } .ok { background:#1f4b3a; }
+  .muted { color:#9ca3af; font-size:.9rem; }
+  label { display:block; margin:8px 0; }
+  a { color:#a5b4fc; }
+</style>
+</head>
+<body>
+<h1>🛠 在庫管理 管理ページ</h1>
+
+<div class="card">
+  <h2>データの保存先</h2>
+  <div id="status">確認中…</div>
+  <p class="muted">アプリ画面へ戻る： <a href="./">在庫管理システム</a></p>
+</div>
+
+<div class="card">
+  <h2>💾 バックアップを保存</h2>
+  <p class="muted" id="backupNote">全データを1つのファイル（.json）としてダウンロードします。</p>
+  <button id="export">バックアップをダウンロード</button>
+  <div id="exportResult"></div>
+</div>
+
+<div class="card">
+  <h2>📥 データを取り込む</h2>
+  <p class="muted">バックアップファイル（サーバーPC版の管理ページで保存したものも可）を取り込みます。<br>
+     <b>サーバーPC → SharePoint への引っ越しは</b>、サーバーPC版の管理ページで「バックアップをダウンロード」し、
+     そのファイルをこの画面（SharePoint版）で「置き換え」で取り込みます。</p>
+  <input type="file" id="file" accept=".json,application/json">
+  <label><input type="radio" name="mode" value="replace" checked> 置き換え（今のデータを消して、ファイルの内容にする）※引っ越しはこちら</label>
+  <label><input type="radio" name="mode" value="merge"> 追加・上書き（同じキーのものは上書き、それ以外は残す）</label>
+  <button id="import" class="danger">取り込む</button>
+  <div id="importResult"></div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/vendor/msal-browser.min.js"></script>
+<script src="js/database.js"></script>
+<script src="js/sharepoint-transport.js"></script>
+<script>
+const LABELS = { products:'製品', parts:'部品', inventory:'在庫', stockHistory:'入出庫履歴',
+                 shipmentSchedules:'出荷予定', shipmentHistory:'出荷履歴', orderRecords:'発注記録', suppliers:'仕入先',
+                 ediLog:'EDI反映履歴', appSettings:'設定' };
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+let isSharePoint = false;
+
+async function loadStatus() {
+  const el = document.getElementById('status');
+  try {
+    const names = Object.keys(LABELS);
+    const counts = await Promise.all(names.map(s => db.getAll(s).then(a => a.length)));
+    let rows = '';
+    names.forEach((s, i) => { rows += `<tr><td>${LABELS[s]}</td><td class="n">${counts[i].toLocaleString()} 件</td></tr>`; });
+    let head;
+    if (isSharePoint) {
+      const t = db._transport;
+      head = `<p>☁ <b>SharePoint</b> に保存しています（ログイン中: ${esc(t.userName)}）<br>` +
+             `<span class="muted">保存フォルダ: <a href="${esc(t.folderWebUrl)}" target="_blank" rel="noopener">${esc(t.folderWebUrl)}</a><br>` +
+             `各ファイルの「バージョン履歴」から、前の状態に戻すこともできます。</span></p>`;
+    } else {
+      const ping = await (await fetch('api/ping', { cache:'no-store' })).json();
+      head = `<p>🖥 <b>サーバーPC</b> に保存しています（サーバーPC: <b>${esc(ping.server)}</b>）<br>` +
+             `<span class="muted">他のPCからは http://${esc(ping.server)}:${location.port || 80}/ で開けます</span></p>`;
+    }
+    el.innerHTML = head + `<table>${rows}</table>`;
+  } catch (e) {
+    el.innerHTML = `<div class="msg err">データを読み込めません: ${esc(e.message)}</div>`;
+  }
+}
+
+// バックアップ（どちらの保存先でも同じ形式）
+document.getElementById('export').addEventListener('click', async () => {
+  const out = document.getElementById('exportResult');
+  try {
+    if (!isSharePoint) { location.href = 'api/export'; return; }
+    out.innerHTML = '<div class="msg">作成中…</div>';
+    const data = { format:'inventory-management-backup', version:1, exportedAt:new Date().toISOString(),
+                   source:'sharepoint', stores:{} };
+    for (const s of Object.keys(LABELS)) data.stores[s] = await db.getAll(s);
+    const blob = new Blob([JSON.stringify(data)], { type:'application/json' });
+    const d = new Date(), p = (n) => String(n).padStart(2, '0');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `inventory-backup_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.json`;
+    a.click();
+    out.innerHTML = `<div class="msg ok">${esc(a.download)} を保存しました。</div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="msg err">バックアップに失敗しました: ${esc(e.message)}</div>`;
+  }
+});
+
+document.getElementById('import').addEventListener('click', async () => {
+  const out = document.getElementById('importResult');
+  const file = document.getElementById('file').files[0];
+  if (!file) { out.innerHTML = '<div class="msg err">ファイルを選択してください</div>'; return; }
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch (e) {
+    out.innerHTML = '<div class="msg err">ファイルを読み込めません（JSON形式ではありません）</div>'; return;
+  }
+  if (!data || !data.stores) {
+    out.innerHTML = '<div class="msg err">在庫管理システムのデータファイルではありません</div>'; return;
+  }
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  const summary = Object.keys(LABELS).map(s => `${LABELS[s]}: ${(data.stores[s] || []).length}件`).join('\n');
+  const where = isSharePoint ? 'SharePoint' : 'サーバーPC';
+  const warn = mode === 'replace' ? `\n\n※ 今${where}にあるデータはすべて置き換わります` +
+    (isSharePoint ? '（SharePoint のバージョン履歴に前の状態が残ります）' : '（直前の状態は自動バックアップされます）') : '';
+  if (!confirm(`${where} に次の内容を取り込みます。\n\n${summary}${warn}\n\nよろしいですか？`)) return;
+  try {
+    out.innerHTML = '<div class="msg">取り込み中…（部品が多いと数十秒かかります）</div>';
+    if (isSharePoint) {
+      const ops = [];
+      for (const s of Object.keys(LABELS)) {
+        const rows = data.stores[s];
+        if (!Array.isArray(rows)) continue;
+        if (mode === 'replace') ops.push({ op:'clearStore', store:s });
+        for (const r of rows) ops.push({ op:'put', store:s, data:r });
+      }
+      if (mode === 'replace') {
+        // ファイルに無いストアも空にする
+        for (const s of Object.keys(LABELS)) if (!Array.isArray(data.stores[s])) ops.push({ op:'clearStore', store:s });
+      }
+      await db.batch(ops);
+    } else {
+      const res = await fetch('api/import', { method:'POST', headers:{'Content-Type':'application/json'},
+                                               body: JSON.stringify({ data, mode }) });
+      const body = await res.json();
+      if (!body.ok) throw new Error(body.error);
+    }
+    out.innerHTML = '<div class="msg ok">取り込みが完了しました。</div>';
+    loadStatus();
+  } catch (e) {
+    out.innerHTML = `<div class="msg err">取り込みに失敗しました: ${esc(e.message)}</div>`;
+  }
+});
+
+(async () => {
+  try {
+    await db.init();
+    isSharePoint = db.storageLabel === 'SharePoint';
+    if (isSharePoint) {
+      document.getElementById('backupNote').textContent =
+        '全データを1つのファイル（.json）としてダウンロードします。SharePoint のバージョン履歴でも前の状態に戻せます。';
+    } else {
+      document.getElementById('backupNote').textContent =
+        '全データを1つのファイル（.json）としてダウンロードします。サーバー側でも毎日自動でバックアップしています。';
+    }
+  } catch (e) {
+    document.getElementById('status').innerHTML = `<div class="msg err">${esc(e.message)}</div>`;
+    return;
+  }
+  loadStatus();
+})();
+</script>
+</body>
+</html>

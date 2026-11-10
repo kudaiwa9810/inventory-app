@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ログイン中…</title>
+</head>
+<body style="font-family: 'Yu Gothic UI', 'Meiryo', sans-serif; background:#1a1a2e; color:#e5e7eb; padding:24px;">
+<p>Microsoft 365 にログインしています…</p>
+<!-- ログイン後に Microsoft から戻ってくるページ（MSAL のリダイレクト中継） -->
+<script src="js/vendor/msal-redirect-bridge.min.js"></script>
+<script>
+  msalRedirectBridge.broadcastResponseToMainFrame().catch(function (e) {
+    document.body.innerHTML = '<p>ログインの処理に失敗しました: ' + (e && e.message ? e.message : e) +
+      '</p><p><a href="./" style="color:#a5b4fc">アプリに戻る</a></p>';
+  });
+</script>
+</body>
+</html>
